@@ -8,6 +8,8 @@ on:
         required: false
         default: true
         type: boolean
+  push:
+    branches: [feature/azure-cicd-test]
 
 env:
   AZURE_ACR_NAME: ${{ secrets.AZURE_ACR_NAME }}
