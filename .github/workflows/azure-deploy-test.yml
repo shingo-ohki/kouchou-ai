@@ -1,12 +1,12 @@
 name: Azure Deployment Test
 
-on:
+'on':
   workflow_dispatch:
     inputs:
       dry_run:
         description: 'Dry run mode (true/false)'
         required: false
-        default: true
+        default: 'true'
         type: boolean
 
 env:
@@ -59,21 +59,21 @@ jobs:
       - name: 環境変数ファイルの準備（テスト）
         run: |
           echo "=== 環境変数ファイル作成テスト ==="
-          
+
           # .env.azureファイルの作成
-          printf '%s\n' \
-            "AZURE_SUBSCRIPTION_ID=${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
-            "AZURE_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}" \
-            "AZURE_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}" \
-            "AZURE_CLIENT_SECRET=***" \
-            "AZURE_RESOURCE_GROUP=${{ secrets.AZURE_RESOURCE_GROUP }}" \
-            "AZURE_LOCATION=${{ secrets.AZURE_LOCATION }}" \
-            "AZURE_ACR_NAME=${{ secrets.AZURE_ACR_NAME }}" \
-            "AZURE_CONTAINER_ENV=${{ secrets.AZURE_CONTAINER_ENV }}" \
-            "AZURE_WORKSPACE_NAME=${{ secrets.AZURE_WORKSPACE_NAME }}" \
-            "AZURE_BLOB_STORAGE_ACCOUNT_NAME=${{ secrets.AZURE_BLOB_STORAGE_ACCOUNT_NAME }}" \
-            "AZURE_BLOB_STORAGE_CONTAINER_NAME=${{ secrets.AZURE_BLOB_STORAGE_CONTAINER_NAME }}" \
-            > .env.azure
+          cat > .env.azure << EOF
+          AZURE_SUBSCRIPTION_ID=${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          AZURE_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET=***
+          AZURE_RESOURCE_GROUP=${{ secrets.AZURE_RESOURCE_GROUP }}
+          AZURE_LOCATION=${{ secrets.AZURE_LOCATION }}
+          AZURE_ACR_NAME=${{ secrets.AZURE_ACR_NAME }}
+          AZURE_CONTAINER_ENV=${{ secrets.AZURE_CONTAINER_ENV }}
+          AZURE_WORKSPACE_NAME=${{ secrets.AZURE_WORKSPACE_NAME }}
+          AZURE_BLOB_STORAGE_ACCOUNT_NAME=${{ secrets.AZURE_BLOB_STORAGE_ACCOUNT_NAME }}
+          AZURE_BLOB_STORAGE_CONTAINER_NAME=${{ secrets.AZURE_BLOB_STORAGE_CONTAINER_NAME }}
+          EOF
 
           # .envファイルの作成
           printf '%s\n' \
@@ -94,7 +94,7 @@ jobs:
         run: |
           echo "=== Makefileターゲット確認 ==="
           make --help || echo "make help not available"
-          
+
           echo "=== azure-update-deployment の存在確認 ==="
           if make -n azure-update-deployment 2>/dev/null; then
             echo "✅ azure-update-deployment ターゲットが存在します"
@@ -107,14 +107,14 @@ jobs:
         if: github.event.inputs.dry_run == 'true'
         run: |
           echo "=== Azure リソース確認（Dry Run） ==="
-          
+
           # リソースグループの存在確認
           if az group show --name ${{ env.AZURE_RESOURCE_GROUP }} >/dev/null 2>&1; then
             echo "✅ リソースグループ ${{ env.AZURE_RESOURCE_GROUP }} が存在します"
           else
             echo "❌ リソースグループ ${{ env.AZURE_RESOURCE_GROUP }} が見つかりません"
           fi
-          
+
           # ACRの存在確認
           if az acr show --name ${{ env.AZURE_ACR_NAME }} >/dev/null 2>&1; then
             echo "✅ ACR ${{ env.AZURE_ACR_NAME }} が存在します"
