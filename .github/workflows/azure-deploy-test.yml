@@ -1,6 +1,6 @@
 name: Azure Deployment Test
 
-'on':
+on:
   workflow_dispatch:
     inputs:
       dry_run:
