@@ -1,0 +1,68 @@
+name: Azure Deployment
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  AZURE_ACR_NAME: ${{ secrets.AZURE_ACR_NAME }}
+  AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure CLI ログイン
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Docker ログイン (ACR)
+        run: |
+          az acr login --name ${{ env.AZURE_ACR_NAME }}
+
+      - name: Python環境のセットアップ
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Python依存関係のインストール
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests python-dotenv
+
+      - name: 環境変数ファイルの準備
+        run: |
+          # GitHub Secretsから.env.azureファイルを作成（セキュアな方法）
+          printf '%s\n' \
+            "AZURE_SUBSCRIPTION_ID=${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
+            "AZURE_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}" \
+            "AZURE_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}" \
+            "AZURE_CLIENT_SECRET=${{ secrets.AZURE_CLIENT_SECRET }}" \
+            "AZURE_RESOURCE_GROUP=${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            "AZURE_LOCATION=${{ secrets.AZURE_LOCATION }}" \
+            "AZURE_ACR_NAME=${{ secrets.AZURE_ACR_NAME }}" \
+            "AZURE_CONTAINER_ENV=${{ secrets.AZURE_CONTAINER_ENV }}" \
+            "AZURE_WORKSPACE_NAME=${{ secrets.AZURE_WORKSPACE_NAME }}" \
+            "AZURE_BLOB_STORAGE_ACCOUNT_NAME=${{ secrets.AZURE_BLOB_STORAGE_ACCOUNT_NAME }}" \
+            "AZURE_BLOB_STORAGE_CONTAINER_NAME=${{ secrets.AZURE_BLOB_STORAGE_CONTAINER_NAME }}" \
+            > .env.azure
+
+          # .envファイルも作成（セキュアな方法）
+          printf '%s\n' \
+            "PUBLIC_API_KEY=${{ secrets.PUBLIC_API_KEY }}" \
+            "ADMIN_API_KEY=${{ secrets.ADMIN_API_KEY }}" \
+            "BASIC_AUTH_USERNAME=${{ secrets.BASIC_AUTH_USERNAME }}" \
+            "BASIC_AUTH_PASSWORD=${{ secrets.BASIC_AUTH_PASSWORD }}" \
+            "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" \
+            > .env
+
+      - name: Azure環境の更新デプロイ
+        run: |
+          make azure-update-deployment

@@ -1,0 +1,140 @@
+name: Azure Deployment Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run mode (true/false)'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  AZURE_ACR_NAME: ${{ secrets.AZURE_ACR_NAME }}
+  AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+
+jobs:
+  test-deploy:
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure CLI ログイン
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: 環境変数の確認
+        run: |
+          echo "=== 環境変数確認 ==="
+          echo "AZURE_ACR_NAME: ${{ env.AZURE_ACR_NAME }}"
+          echo "AZURE_RESOURCE_GROUP: ${{ env.AZURE_RESOURCE_GROUP }}"
+          echo "DRY_RUN: ${{ github.event.inputs.dry_run }}"
+
+      - name: Azure CLI バージョン確認
+        run: |
+          echo "=== Azure CLI バージョン ==="
+          az version
+
+      - name: Docker ログイン (ACR) - テスト
+        run: |
+          echo "=== ACR ログインテスト ==="
+          az acr login --name ${{ env.AZURE_ACR_NAME }}
+          echo "ACRログイン成功"
+
+      - name: Python環境のセットアップ
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Python依存関係のインストール
+        run: |
+          echo "=== Python依存関係インストール ==="
+          python -m pip install --upgrade pip
+          pip install requests python-dotenv
+          echo "依存関係インストール完了"
+
+      - name: 環境変数ファイルの準備（テスト）
+        run: |
+          echo "=== 環境変数ファイル作成テスト ==="
+          
+          # .env.azureファイルの作成
+          printf '%s\n' \
+            "AZURE_SUBSCRIPTION_ID=${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
+            "AZURE_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}" \
+            "AZURE_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}" \
+            "AZURE_CLIENT_SECRET=***" \
+            "AZURE_RESOURCE_GROUP=${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            "AZURE_LOCATION=${{ secrets.AZURE_LOCATION }}" \
+            "AZURE_ACR_NAME=${{ secrets.AZURE_ACR_NAME }}" \
+            "AZURE_CONTAINER_ENV=${{ secrets.AZURE_CONTAINER_ENV }}" \
+            "AZURE_WORKSPACE_NAME=${{ secrets.AZURE_WORKSPACE_NAME }}" \
+            "AZURE_BLOB_STORAGE_ACCOUNT_NAME=${{ secrets.AZURE_BLOB_STORAGE_ACCOUNT_NAME }}" \
+            "AZURE_BLOB_STORAGE_CONTAINER_NAME=${{ secrets.AZURE_BLOB_STORAGE_CONTAINER_NAME }}" \
+            > .env.azure
+
+          # .envファイルの作成
+          printf '%s\n' \
+            "PUBLIC_API_KEY=${{ secrets.PUBLIC_API_KEY }}" \
+            "ADMIN_API_KEY=${{ secrets.ADMIN_API_KEY }}" \
+            "BASIC_AUTH_USERNAME=${{ secrets.BASIC_AUTH_USERNAME }}" \
+            "BASIC_AUTH_PASSWORD=***" \
+            "OPENAI_API_KEY=***" \
+            > .env
+
+          echo "環境変数ファイル作成完了"
+          echo "=== .env.azure (秘密情報マスク) ==="
+          cat .env.azure | sed 's/=.*/=***/g'
+          echo "=== .env (秘密情報マスク) ==="
+          cat .env | sed 's/=.*/=***/g'
+
+      - name: Makefileコマンドの確認
+        run: |
+          echo "=== Makefileターゲット確認 ==="
+          make --help || echo "make help not available"
+          
+          echo "=== azure-update-deployment の存在確認 ==="
+          if make -n azure-update-deployment 2>/dev/null; then
+            echo "✅ azure-update-deployment ターゲットが存在します"
+          else
+            echo "❌ azure-update-deployment ターゲットが見つかりません"
+            exit 1
+          fi
+
+      - name: Azure環境確認（Dry Run）
+        if: github.event.inputs.dry_run == 'true'
+        run: |
+          echo "=== Azure リソース確認（Dry Run） ==="
+          
+          # リソースグループの存在確認
+          if az group show --name ${{ env.AZURE_RESOURCE_GROUP }} >/dev/null 2>&1; then
+            echo "✅ リソースグループ ${{ env.AZURE_RESOURCE_GROUP }} が存在します"
+          else
+            echo "❌ リソースグループ ${{ env.AZURE_RESOURCE_GROUP }} が見つかりません"
+          fi
+          
+          # ACRの存在確認
+          if az acr show --name ${{ env.AZURE_ACR_NAME }} >/dev/null 2>&1; then
+            echo "✅ ACR ${{ env.AZURE_ACR_NAME }} が存在します"
+          else
+            echo "❌ ACR ${{ env.AZURE_ACR_NAME }} が見つかりません"
+          fi
+
+      - name: 実際のデプロイ実行
+        if: github.event.inputs.dry_run == 'false'
+        run: |
+          echo "=== 実際のデプロイを実行します ==="
+          make azure-update-deployment
+
+      - name: テスト完了
+        run: |
+          echo "=== テスト完了 ==="
+          if [ "${{ github.event.inputs.dry_run }}" == "true" ]; then
+            echo "✅ Dry Runモードでテストが完了しました"
+            echo "実際のデプロイを行う場合は、dry_run を false に設定してください"
+          else
+            echo "✅ 実際のデプロイが完了しました"
+          fi
