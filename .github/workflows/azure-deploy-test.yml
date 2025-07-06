@@ -91,6 +91,7 @@ jobs:
           STORAGE_TYPE=${{ vars.STORAGE_TYPE }}
           USE_AZURE=${{ vars.USE_AZURE }}
           WITH_GPU=${{ vars.WITH_GPU }}
+          REVALIDATE_SECRET=${{ secrets.REVALIDATE_SECRET }}
           EOF
 
           echo "環境変数ファイル作成完了"
