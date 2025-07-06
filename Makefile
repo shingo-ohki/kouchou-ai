@@ -249,7 +249,7 @@ azure-assign-storage-access:
 # 環境変数の更新
 azure-config-update:
 	$(call read-env)
-	docker run -it --rm -v $(shell pwd):/workspace -v $(HOME)/.azure:/root/.azure -w /workspace mcr.microsoft.com/azure-cli /bin/bash -c "\
+	docker run --rm -v $(shell pwd):/workspace -v $(HOME)/.azure:/root/.azure -w /workspace mcr.microsoft.com/azure-cli /bin/bash -c "\
 	    API_DOMAIN=\$$(az containerapp show --name api --resource-group $(AZURE_RESOURCE_GROUP) --query properties.configuration.ingress.fqdn -o tsv) && \
 	    CLIENT_DOMAIN=\$$(az containerapp show --name client --resource-group $(AZURE_RESOURCE_GROUP) --query properties.configuration.ingress.fqdn -o tsv) && \
 	    CLIENT_ADMIN_DOMAIN=\$$(az containerapp show --name client-admin --resource-group $(AZURE_RESOURCE_GROUP) --query properties.configuration.ingress.fqdn -o tsv) && \
