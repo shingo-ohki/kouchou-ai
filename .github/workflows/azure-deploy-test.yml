@@ -81,6 +81,16 @@ jobs:
           BASIC_AUTH_USERNAME=${{ vars.BASIC_AUTH_USERNAME }}
           BASIC_AUTH_PASSWORD=${{ secrets.BASIC_AUTH_PASSWORD }}
           OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+          API_BASEPATH=${{ vars.API_BASEPATH }}
+          CLIENT_STATIC_BUILD_BASEPATH=${{ vars.CLIENT_STATIC_BUILD_BASEPATH }}
+          ENVIRONMENT=${{ vars.ENVIRONMENT }}
+          NEXT_PUBLIC_API_BASEPATH=${{ vars.NEXT_PUBLIC_API_BASEPATH }}
+          NEXT_PUBLIC_CLIENT_BASEPATH=${{ vars.NEXT_PUBLIC_CLIENT_BASEPATH }}
+          NEXT_PUBLIC_SITE_URL=${{ vars.NEXT_PUBLIC_SITE_URL }}
+          REVALIDATE_URL=${{ vars.REVALIDATE_URL }}
+          STORAGE_TYPE=${{ vars.STORAGE_TYPE }}
+          USE_AZURE=${{ vars.USE_AZURE }}
+          WITH_GPU=${{ vars.WITH_GPU }}
           EOF
 
           echo "環境変数ファイル作成完了"
