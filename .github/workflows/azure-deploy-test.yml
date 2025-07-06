@@ -9,7 +9,7 @@ on:
         default: true
         type: boolean
   push:
-    branches: [feature/azure-cicd-test]
+    branches: [feature/azure-cicd-testxxxx]
 
 env:
   AZURE_ACR_NAME: ${{ vars.AZURE_ACR_NAME }}
