@@ -75,13 +75,13 @@ jobs:
           EOF
 
           # .envファイルの作成
-          printf '%s\n' \
-            "PUBLIC_API_KEY=${{ secrets.PUBLIC_API_KEY }}" \
-            "ADMIN_API_KEY=${{ secrets.ADMIN_API_KEY }}" \
-            "BASIC_AUTH_USERNAME=${{ vars.BASIC_AUTH_USERNAME }}" \
-            "BASIC_AUTH_PASSWORD=${{ secrets.BASIC_AUTH_PASSWORD }}" \
-            "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" \
-            > .env
+          cat > .env << EOF
+          PUBLIC_API_KEY=${{ secrets.PUBLIC_API_KEY }}
+          ADMIN_API_KEY=${{ secrets.ADMIN_API_KEY }}
+          BASIC_AUTH_USERNAME=${{ vars.BASIC_AUTH_USERNAME }}
+          BASIC_AUTH_PASSWORD=${{ secrets.BASIC_AUTH_PASSWORD }}
+          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+          EOF
 
           echo "環境変数ファイル作成完了"
           echo "=== .env.azure ==="
