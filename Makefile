@@ -1,7 +1,7 @@
 .PHONY: build up down \
 lint/server-check lint/server-format \
 client-build-static client-setup client-dev client-dev-server client-admin-dev-server dummy-server \
-azure-cli azure-login azure-build azure-push azure-deploy azure-info azure-config-update azure-cleanup azure-status prepare-yaml azure-save-env azure-apply-policies azure-update-deployment-ci azure-fix-client-admin-ci \
+azure-cli azure-login azure-build azure-build-ci azure-push azure-deploy azure-info azure-config-update azure-cleanup azure-status prepare-yaml azure-save-env azure-apply-policies azure-update-deployment-ci azure-fix-client-admin-ci \
 azure-logs-client azure-logs-api azure-logs-admin azure-logs-client-static-build
 
 ##############################################################################
@@ -128,7 +128,6 @@ azure-acr-login-auto:
 azure-build:
 	$(call read-env)
 	docker build --platform linux/amd64 -t $(AZURE_ACR_NAME).azurecr.io/api:latest ./server
-	docker build --platform linux/amd64 -t $(AZURE_ACR_NAME).azurecr.io/client:latest ./client
 	docker build --platform linux/amd64 \
 		--build-arg NEXT_PUBLIC_API_BASEPATH="$(NEXT_PUBLIC_API_BASEPATH)" \
 		--build-arg NEXT_PUBLIC_PUBLIC_API_KEY="$(NEXT_PUBLIC_PUBLIC_API_KEY)" \
@@ -141,6 +140,15 @@ azure-build:
 		--build-arg NEXT_PUBLIC_API_BASEPATH="$(NEXT_PUBLIC_API_BASEPATH)" \
 		--build-arg CLIENT_STATIC_BUILD_BASEPATH="$(CLIENT_STATIC_BUILD_BASEPATH)" \
 		-t $(AZURE_ACR_NAME).azurecr.io/client-admin:latest ./client-admin
+	docker build --platform linux/amd64 --no-cache -t $(AZURE_ACR_NAME).azurecr.io/client-static-build:latest -f ./client-static-build/Dockerfile .
+
+# Azure用のイメージをビルド（CI環境用 - 環境変数なし）
+azure-build-ci:
+	$(call read-env)
+	docker build --platform linux/amd64 -t $(AZURE_ACR_NAME).azurecr.io/api:latest ./server
+	docker build --platform linux/amd64 -t $(AZURE_ACR_NAME).azurecr.io/client:latest ./client
+	docker build --platform linux/amd64 --no-cache -t $(AZURE_ACR_NAME).azurecr.io/client-admin:latest ./client-admin
+	docker build --platform linux/amd64 -t $(AZURE_ACR_NAME).azurecr.io/client-static-build:latest ./client-static-build
 
 # イメージをAzureにプッシュ（ローカルのDockerから）
 azure-push:
@@ -633,8 +641,8 @@ azure-update-deployment-ci:
 	@echo ">>> API_DOMAIN: $(API_DOMAIN)"
 	@cd $(shell pwd) && python3 scripts/fetch_reports.py --api-url https://$(API_DOMAIN)
 
-	@echo ">>> コンテナイメージのビルド..."
-	@$(MAKE) azure-build
+	@echo ">>> コンテナイメージのビルド（CI環境用）..."
+	@$(MAKE) azure-build-ci
 
 	@echo ">>> イメージのプッシュ..."
 	@$(MAKE) azure-acr-login-auto
