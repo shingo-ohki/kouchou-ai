@@ -488,6 +488,9 @@ azure-update-deployment:
 	@echo ">>> 環境変数の設定..."
 	@$(MAKE) azure-config-update
 
+	@echo ">>> ヘルスプローブとポリシーの適用..."
+	@$(MAKE) azure-apply-policies
+
 	@echo ">>> コンテナ再起動..."
 	@$(MAKE) azure-restart-api
 	@$(MAKE) azure-restart-client
