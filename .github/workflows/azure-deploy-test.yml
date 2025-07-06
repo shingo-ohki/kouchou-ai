@@ -126,3 +126,7 @@ jobs:
           else
             echo "✅ 実際のデプロイが完了しました"
           fi
+
+      - name: Azure環境の更新デプロイ
+        run: |
+          make azure-update-deployment
