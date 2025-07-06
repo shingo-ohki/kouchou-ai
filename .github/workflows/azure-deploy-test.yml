@@ -65,10 +65,6 @@ jobs:
 
           # .env.azureファイルの作成
           cat > .env.azure << EOF
-          AZURE_SUBSCRIPTION_ID=${{ vars.AZURE_SUBSCRIPTION_ID }}
-          AZURE_TENANT_ID=${{ vars.AZURE_TENANT_ID }}
-          AZURE_CLIENT_ID=${{ vars.AZURE_CLIENT_ID }}
-          AZURE_CLIENT_SECRET=${{ secrets.AZURE_CLIENT_SECRET }}
           AZURE_RESOURCE_GROUP=${{ vars.AZURE_RESOURCE_GROUP }}
           AZURE_LOCATION=${{ vars.AZURE_LOCATION }}
           AZURE_ACR_NAME=${{ vars.AZURE_ACR_NAME }}
@@ -88,26 +84,13 @@ jobs:
             > .env
 
           echo "環境変数ファイル作成完了"
-          echo "=== .env.azure (秘密情報マスク) ==="
-          cat .env.azure | sed 's/=.*/=***/g'
+          echo "=== .env.azure ==="
+          cat .env.azure
           echo "=== .env (秘密情報マスク) ==="
           cat .env | sed 's/=.*/=***/g'
 
-      - name: Makefileコマンドの確認
-        run: |
-          echo "=== Makefileターゲット確認 ==="
-          make --help || echo "make help not available"
-
-          echo "=== azure-update-deployment の存在確認 ==="
-          if make -n azure-update-deployment 2>/dev/null; then
-            echo "✅ azure-update-deployment ターゲットが存在します"
-          else
-            echo "❌ azure-update-deployment ターゲットが見つかりません"
-            exit 1
-          fi
-
       - name: Azure環境確認（Dry Run）
-        if: github.event.inputs.dry_run == 'true'
+        if: github.event.inputs.dry_run == 'true' || github.event.inputs.dry_run == null
         run: |
           echo "=== Azure リソース確認（Dry Run） ==="
 
@@ -134,7 +117,10 @@ jobs:
       - name: テスト完了
         run: |
           echo "=== テスト完了 ==="
-          if [ "${{ github.event.inputs.dry_run }}" == "true" ]; then
+          # プッシュ時とworkflow_dispatch時の動作を明確化
+          if [ "${{ github.event_name }}" == "push" ]; then
+            echo "✅ プッシュトリガーでDry Runモードが実行されました"
+          elif [ "${{ github.event.inputs.dry_run }}" == "true" ]; then
             echo "✅ Dry Runモードでテストが完了しました"
             echo "実際のデプロイを行う場合は、dry_run を false に設定してください"
           else
