@@ -633,13 +633,7 @@ azure-update-deployment-ci:
 	@echo ">>> ヘルスプローブとポリシーの適用..."
 	@$(MAKE) azure-apply-policies
 
-	@echo ">>> CI環境では環境変数設定をスキップ（GitHub Actionsで直接設定）..."
-	@echo ">>> コンテナ再起動..."
-	@$(MAKE) azure-restart-api
-	@$(MAKE) azure-restart-client
-	@$(MAKE) azure-restart-client-static-build
-	@echo ">>> 管理者クライアントコンテナを環境変数を修正して再起動中..."
-	@$(MAKE) azure-fix-client-admin-ci
+	@echo ">>> CI環境では環境変数設定・コンテナ再起動をスキップ（GitHub Actionsで実行）..."
 
 	@echo ">>> サービスURLの確認..."
 	@$(MAKE) azure-info

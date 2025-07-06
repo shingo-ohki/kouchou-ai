@@ -89,7 +89,17 @@ jobs:
           echo "Admin Domain: $CLIENT_ADMIN_DOMAIN"
           echo "Static Build Domain: $CLIENT_STATIC_BUILD_DOMAIN"
 
-          # APIコンテナの環境変数を設定
+          # 一時的にすべてのコンテナをスケールダウン（環境変数設定準備）
+          echo ">>> コンテナを一時的にスケールダウン中..."
+          az containerapp update --name api --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --min-replicas 0 &
+          az containerapp update --name client --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --min-replicas 0 &
+          az containerapp update --name client-admin --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --min-replicas 0 &
+          az containerapp update --name client-static-build --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --min-replicas 0 &
+          wait
+
+          echo ">>> 環境変数設定と同時にコンテナを起動..."
+
+          # APIコンテナの環境変数を設定して起動
           echo ">>> APIコンテナの環境変数を設定中..."
           az containerapp update --name api --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --set-env-vars \
@@ -102,18 +112,20 @@ jobs:
               "STORAGE_TYPE=azure_blob" \
               "REVALIDATE_URL=https://${CLIENT_DOMAIN}/api/revalidate" \
               "REVALIDATE_SECRET=${{ secrets.REVALIDATE_SECRET }}" \
-              "ENVIRONMENT=${{ vars.ENVIRONMENT }}"
+              "ENVIRONMENT=${{ vars.ENVIRONMENT }}" \
+            --min-replicas 1
 
-          # クライアントコンテナの環境変数を設定
+          # クライアントコンテナの環境変数を設定して起動
           echo ">>> クライアントコンテナの環境変数を設定中..."
           az containerapp update --name client --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --set-env-vars \
               "NEXT_PUBLIC_PUBLIC_API_KEY=${{ secrets.PUBLIC_API_KEY }}" \
               "NEXT_PUBLIC_API_BASEPATH=https://${API_DOMAIN}" \
               "API_BASEPATH=https://${API_DOMAIN}" \
-              "NEXT_PUBLIC_SITE_URL=${{ vars.NEXT_PUBLIC_SITE_URL }}"
+              "NEXT_PUBLIC_SITE_URL=${{ vars.NEXT_PUBLIC_SITE_URL }}" \
+            --min-replicas 1
 
-          # 管理者クライアントコンテナの環境変数を設定
+          # 管理者クライアントコンテナの環境変数を設定して起動
           echo ">>> 管理者クライアントコンテナの環境変数を設定中..."
           az containerapp update --name client-admin --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --set-env-vars \
@@ -123,44 +135,16 @@ jobs:
               "API_BASEPATH=https://${API_DOMAIN}" \
               "CLIENT_STATIC_BUILD_BASEPATH=https://${CLIENT_STATIC_BUILD_DOMAIN}" \
               "BASIC_AUTH_USERNAME=${{ vars.BASIC_AUTH_USERNAME }}" \
-              "BASIC_AUTH_PASSWORD=${{ secrets.BASIC_AUTH_PASSWORD }}"
+              "BASIC_AUTH_PASSWORD=${{ secrets.BASIC_AUTH_PASSWORD }}" \
+            --min-replicas 1
 
-          # クライアントビルドコンテナの環境変数を設定
+          # クライアントビルドコンテナの環境変数を設定して起動
           echo ">>> クライアントビルドコンテナの環境変数を設定中..."
           az containerapp update --name client-static-build --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --set-env-vars \
               "NEXT_PUBLIC_PUBLIC_API_KEY=${{ secrets.PUBLIC_API_KEY }}" \
               "NEXT_PUBLIC_API_BASEPATH=https://${API_DOMAIN}" \
-              "API_BASEPATH=https://${API_DOMAIN}"
+              "API_BASEPATH=https://${API_DOMAIN}" \
+            --min-replicas 1
 
-          echo "環境変数設定完了"
-
-      - name: コンテナの最終再起動（環境変数反映）
-        run: |
-          echo "=== 環境変数設定後のコンテナ最終再起動 ==="
-
-          # APIコンテナの再起動
-          echo ">>> APIコンテナを再起動中..."
-          az containerapp update --name api --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --min-replicas 0
-          sleep 5
-          az containerapp update --name api --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --min-replicas 1
-
-          # クライアントコンテナの再起動
-          echo ">>> クライアントコンテナを再起動中..."
-          az containerapp update --name client --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --min-replicas 0
-          sleep 5
-          az containerapp update --name client --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --min-replicas 1
-
-          # 管理者クライアントコンテナの再起動
-          echo ">>> 管理者クライアントコンテナを再起動中..."
-          az containerapp update --name client-admin --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --min-replicas 0
-          sleep 5
-          az containerapp update --name client-admin --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --min-replicas 1
-
-          # クライアントビルドコンテナの再起動
-          echo ">>> クライアントビルドコンテナを再起動中..."
-          az containerapp update --name client-static-build --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --min-replicas 0
-          sleep 5
-          az containerapp update --name client-static-build --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --min-replicas 1
-
-          echo "全コンテナの再起動完了"
+          echo "環境変数設定とコンテナ起動完了"
