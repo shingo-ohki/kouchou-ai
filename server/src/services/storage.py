@@ -132,33 +132,13 @@ class AzureBlobStorageService(StorageService):
 
         設定からAzure Blob Storageの接続情報を取得し、クライアントを初期化します。
         """
-        logger.info("[STORAGE] AzureBlobStorageService初期化開始")
-        logger.info(f"[STORAGE] アカウントURL: {settings.azure_blob_storage_account_url}")
-        logger.info(f"[STORAGE] コンテナ名: {settings.AZURE_BLOB_STORAGE_CONTAINER_NAME}")
-
-        try:
-            logger.info("[STORAGE] DefaultAzureCredential初期化中...")
-            credential = DefaultAzureCredential()
-
-            logger.info("[STORAGE] BlobServiceClient初期化中...")
-            self.blob_service_client = BlobServiceClient(
-                account_url=settings.azure_blob_storage_account_url,
-                credential=credential,
-            )
-
-            logger.info("[STORAGE] ContainerClient取得中...")
-            self.container_client = self.blob_service_client.get_container_client(
-                settings.AZURE_BLOB_STORAGE_CONTAINER_NAME
-            )
-
-            logger.info("[STORAGE] AzureBlobStorageService初期化完了")
-
-        except Exception as e:
-            logger.error(f"[STORAGE] AzureBlobStorageService初期化エラー: {type(e).__name__} - {str(e)}")
-            import traceback
-
-            logger.error(f"[STORAGE] スタックトレース:\n{traceback.format_exc()}")
-            raise
+        self.blob_service_client = BlobServiceClient(
+            account_url=settings.azure_blob_storage_account_url,
+            credential=DefaultAzureCredential(),
+        )
+        self.container_client = self.blob_service_client.get_container_client(
+            settings.AZURE_BLOB_STORAGE_CONTAINER_NAME
+        )
 
     def _has_target_suffix(self, blob_path: str, target_suffixes: tuple[str, ...] = ()) -> bool:
         """指定されたsuffixで終わるファイルを判定する
@@ -187,39 +167,16 @@ class AzureBlobStorageService(StorageService):
                 パスが空または「.」の場合、元のファイル名のみが使用されます
             skip_if_same: 同一ファイルが存在する場合にスキップするかどうか（デフォルト: True）
         """
-        logger.info(f"[STORAGE] アップロード開始: {local_file_path} -> {remote_blob_path}")
-
-        # ファイルの存在確認
-        if not os.path.exists(local_file_path):
-            logger.error(f"[STORAGE] アップロード元ファイルが存在しません: {local_file_path}")
-            return False
-
-        # ファイルサイズの確認
-        try:
-            file_size = os.path.getsize(local_file_path)
-            logger.info(f"[STORAGE] アップロード対象ファイルサイズ: {file_size} bytes")
-        except Exception as e:
-            logger.error(f"[STORAGE] ファイルサイズ取得エラー: {local_file_path}, エラー: {str(e)}")
-            return False
-
         try:
             if remote_blob_path.endswith("/"):
                 remote_blob_path = remote_blob_path + os.path.basename(local_file_path)
             elif remote_blob_path == "" or remote_blob_path == ".":
                 remote_blob_path = os.path.basename(local_file_path)
 
-            logger.info(f"[STORAGE] 最終リモートパス: {remote_blob_path}")
-
-            # Azure認証情報の確認
-            logger.info(f"[STORAGE] Azure設定確認 - アカウントURL: {settings.azure_blob_storage_account_url}")
-            logger.info(f"[STORAGE] コンテナ名: {settings.AZURE_BLOB_STORAGE_CONTAINER_NAME}")
-
             blob_client = self.container_client.get_blob_client(remote_blob_path)
-            logger.info("[STORAGE] Blobクライアント作成成功")
 
             # 同一ファイルチェック
             if skip_if_same and blob_client.exists():
-                logger.info("[STORAGE] リモートファイル存在チェック中...")
                 # ローカルファイルのサイズを取得
                 local_file_size = os.path.getsize(local_file_path)
 
@@ -230,29 +187,19 @@ class AzureBlobStorageService(StorageService):
                 # サイズが同じ場合はスキップ
                 if local_file_size == remote_file_size:
                     logger.info(
-                        f"[STORAGE] 同一ファイルが存在します。アップロードをスキップします。パス: '{local_file_path}' パス: '{remote_blob_path}'"
+                        f"同一ファイルが存在します。アップロードをスキップします。パス: '{local_file_path}' パス: '{remote_blob_path}'"
                     )
                     return True
 
             # ファイルをアップロード
-            logger.info(f"[STORAGE] ファイル読み込み開始: {local_file_path}")
             with open(local_file_path, "rb") as data:
-                logger.info("[STORAGE] Blobアップロード開始...")
                 blob_client.upload_blob(data, overwrite=True)
-                logger.info("[STORAGE] Blobアップロード完了")
-
-            logger.info(
-                f"[STORAGE] ファイルをアップロードしました。パス: '{local_file_path}' パス: '{remote_blob_path}'"
-            )
+            logger.info(f"ファイルをアップロードしました。パス: '{local_file_path}' パス: '{remote_blob_path}'")
             return True
         except Exception as e:
             logger.error(
-                f"[STORAGE] ファイルのアップロードに失敗しました。パス: '{local_file_path}' パス: '{remote_blob_path}' エラータイプ: {type(e).__name__} エラー詳細: {str(e)}"
+                f"ファイルのアップロードに失敗しました。パス: '{local_file_path}' パス: '{remote_blob_path}' エラー: {str(e)}"
             )
-            # スタックトレースも出力
-            import traceback
-
-            logger.error(f"[STORAGE] スタックトレース:\n{traceback.format_exc()}")
             return False
 
     def upload_directory(
@@ -273,73 +220,45 @@ class AzureBlobStorageService(StorageService):
                 指定された場合、リストに含まれる拡張子を持つファイルのみがアップロードされます
             skip_if_same: 同一ファイルが存在する場合にスキップするかどうか（デフォルト: True）
         """
-        logger.info(f"[STORAGE] ディレクトリアップロード開始: {local_dir_path} -> {remote_dir_prefix}")
-
-        # ディレクトリの存在確認
-        if not os.path.exists(local_dir_path):
-            logger.error(f"[STORAGE] アップロード元ディレクトリが存在しません: {local_dir_path}")
-            return False
-
-        if not os.path.isdir(local_dir_path):
-            logger.error(f"[STORAGE] 指定されたパスはディレクトリではありません: {local_dir_path}")
-            return False
-
         try:
             prefix = remote_dir_prefix
             if prefix and not prefix.endswith("/"):
                 prefix += "/"
 
             files_processed = 0
+
             upload_results = []
-
-            logger.info(f"[STORAGE] ディレクトリ走査開始: {local_dir_path}")
-
             for root, _, files in os.walk(local_dir_path):
-                logger.info(f"[STORAGE] 処理中ディレクトリ: {root}, ファイル数: {len(files)}")
                 for filename in files:
                     file_path = os.path.join(root, filename)
                     relative_path = os.path.relpath(file_path, local_dir_path)
                     remote_blob_path = (
                         prefix + relative_path.replace(os.sep, "/") if prefix else relative_path.replace(os.sep, "/")
                     )
-
                     if not self._has_target_suffix(remote_blob_path, target_suffixes):
-                        logger.debug(f"[STORAGE] 対象外ファイルをスキップ: {filename} (suffix: {target_suffixes})")
                         continue
 
                     files_processed += 1
-                    logger.info(f"[STORAGE] ファイルアップロード {files_processed}: {file_path} -> {remote_blob_path}")
                     success = self.upload_file(file_path, remote_blob_path, skip_if_same=skip_if_same)
                     upload_results.append(success)
 
-                    if not success:
-                        logger.error(f"[STORAGE] ファイルアップロード失敗: {file_path}")
-
             if files_processed == 0:
-                logger.warning(
-                    f"[STORAGE] アップロード対象のファイルが見つかりませんでした。パス: '{local_dir_path}', suffix: {target_suffixes}"
-                )
+                logger.warning(f"アップロード対象のファイルが見つかりませんでした。パス: '{local_dir_path}'")
                 return False
 
             # 1件でもアップロードに失敗したらFalseを返す
-            failed_count = sum(1 for success in upload_results if not success)
-            if failed_count > 0:
+            if not all(upload_results):
                 logger.error(
-                    f"[STORAGE] ディレクトリのアップロードに失敗しました。パス: '{local_dir_path}' プレフィックス: '{remote_dir_prefix}' 失敗数: {failed_count}/{files_processed}"
+                    f"ディレクトリのアップロードに失敗しました。パス: '{local_dir_path}' プレフィックス: '{remote_dir_prefix}'"
                 )
                 return False
 
-            logger.info(f"[STORAGE] ディレクトリアップロード完了: {files_processed}件成功")
             return True
 
         except Exception as e:
             logger.error(
-                f"[STORAGE] ディレクトリのアップロードで例外発生。パス: '{local_dir_path}' プレフィックス: '{remote_dir_prefix}' エラータイプ: {type(e).__name__} エラー詳細: {str(e)}"
+                f"ディレクトリのアップロードに失敗しました。パス: '{local_dir_path}' プレフィックス: '{remote_dir_prefix}' エラー: {str(e)}"
             )
-            # スタックトレースも出力
-            import traceback
-
-            logger.error(f"[STORAGE] スタックトレース:\n{traceback.format_exc()}")
             return False
 
     def download_file(self, remote_blob_path: str, local_file_path: str) -> bool:
@@ -403,7 +322,7 @@ class AzureBlobStorageService(StorageService):
 
             for blob in blobs_list:
                 blob_name = blob.name
-                # target_suffixが指定されていて、blob名がそのsuffixで終わなければスキップ
+                # target_suffixが指定されていて、blob名がそのsuffixで終わらなければスキップ
                 if not self._has_target_suffix(blob_name, target_suffixes):
                     continue
 

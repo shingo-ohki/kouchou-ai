@@ -105,97 +105,50 @@ def _monitor_process(process: subprocess.Popen, slug: str) -> None:
         process: 監視対象のサブプロセス
         slug: レポートのスラッグ
     """
-    logger.info(f"[MONITOR] プロセス監視開始: {slug}, PID: {process.pid}")
+    retcode = process.wait()
+    if retcode == 0:
+        # レポート生成成功時、ステータスを更新
+        try:
+            status_file = settings.REPORT_DIR / slug / "hierarchical_status.json"
+            if status_file.exists():
+                with open(status_file) as f:
+                    status_data = json.load(f)
+                    total_token_usage = status_data.get("total_token_usage", 0)
+                    token_usage_input = status_data.get("token_usage_input", 0)
+                    token_usage_output = status_data.get("token_usage_output", 0)
 
-    try:
-        retcode = process.wait()
-        logger.info(f"[MONITOR] プロセス終了: {slug}, 終了コード: {retcode}")
+                    config_file = settings.CONFIG_DIR / f"{slug}.json"
+                    provider = None
+                    model = None
+                    if config_file.exists():
+                        with open(config_file) as f:
+                            config_data = json.load(f)
+                            provider = config_data.get("provider")
+                            model = config_data.get("model")
 
-        if retcode == 0:
-            logger.info(f"[MONITOR] レポート生成成功: {slug}")
-            # レポート生成成功時、ステータスを更新
-            try:
-                status_file = settings.REPORT_DIR / slug / "hierarchical_status.json"
-                logger.info(f"[MONITOR] ステータスファイル確認: {status_file}")
+                    logger.info(
+                        f"Found token usage in status file for {slug}: total={total_token_usage}, input={token_usage_input}, output={token_usage_output}, provider={provider}, model={model}"
+                    )
+                    update_token_usage(
+                        slug, total_token_usage, token_usage_input, token_usage_output, provider or None, model or None
+                    )
+        except Exception as e:
+            logger.error(f"Error updating token usage for {slug}: {e}")
 
-                if status_file.exists():
-                    with open(status_file) as f:
-                        status_data = json.load(f)
-                        total_token_usage = status_data.get("total_token_usage", 0)
-                        token_usage_input = status_data.get("token_usage_input", 0)
-                        token_usage_output = status_data.get("token_usage_output", 0)
+        set_status(slug, "ready")
 
-                        config_file = settings.CONFIG_DIR / f"{slug}.json"
-                        provider = None
-                        model = None
-                        if config_file.exists():
-                            with open(config_file) as f:
-                                config_data = json.load(f)
-                                provider = config_data.get("provider")
-                                model = config_data.get("model")
+        logger.info(f"Syncing files for {slug} to storage")
+        report_sync_service = ReportSyncService()
+        # レポートファイルをストレージに同期し、JSONファイル以外を削除
+        report_sync_service.sync_report_files_to_storage(slug)
+        # 入力ファイルをストレージに同期し、ローカルファイルを削除
+        report_sync_service.sync_input_file_to_storage(slug)
+        # 設定ファイルをストレージに同期
+        report_sync_service.sync_config_file_to_storage(slug)
+        # ステータスファイルをストレージに同期
+        report_sync_service.sync_status_file_to_storage()
 
-                        logger.info(
-                            f"[MONITOR] トークン使用量更新: {slug}: total={total_token_usage}, input={token_usage_input}, output={token_usage_output}, provider={provider}, model={model}"
-                        )
-                        update_token_usage(
-                            slug,
-                            total_token_usage,
-                            token_usage_input,
-                            token_usage_output,
-                            provider or None,
-                            model or None,
-                        )
-                else:
-                    logger.warning(f"[MONITOR] ステータスファイルが存在しません: {status_file}")
-            except Exception as e:
-                logger.error(f"[MONITOR] トークン使用量更新エラー: {slug}: {type(e).__name__} - {str(e)}")
-                import traceback
-
-                logger.error(f"[MONITOR] スタックトレース:\n{traceback.format_exc()}")
-
-            logger.info(f"[MONITOR] ステータス更新: {slug} -> ready")
-            set_status(slug, "ready")
-
-            logger.info(f"[MONITOR] ストレージ同期開始: {slug}")
-            report_sync_service = ReportSyncService()
-
-            try:
-                # レポートファイルをストレージに同期し、JSONファイル以外を削除
-                logger.info(f"[MONITOR] レポートファイル同期: {slug}")
-                report_sync_service.sync_report_files_to_storage(slug)
-
-                # 入力ファイルをストレージに同期し、ローカルファイルを削除
-                logger.info(f"[MONITOR] 入力ファイル同期: {slug}")
-                report_sync_service.sync_input_file_to_storage(slug)
-
-                # 設定ファイルをストレージに同期
-                logger.info(f"[MONITOR] 設定ファイル同期: {slug}")
-                report_sync_service.sync_config_file_to_storage(slug)
-
-                # ステータスファイルをストレージに同期
-                logger.info(f"[MONITOR] ステータスファイル同期: {slug}")
-                report_sync_service.sync_status_file_to_storage()
-
-                logger.info(f"[MONITOR] 全ストレージ同期完了: {slug}")
-
-            except Exception as e:
-                logger.error(f"[MONITOR] ストレージ同期エラー: {slug}: {type(e).__name__} - {str(e)}")
-                import traceback
-
-                logger.error(f"[MONITOR] スタックトレース:\n{traceback.format_exc()}")
-
-                # ストレージ同期に失敗してもステータスはreadyのまま（後で手動同期可能）
-                logger.warning(f"[MONITOR] ストレージ同期に失敗しましたが、ステータスはreadyを維持します: {slug}")
-
-        else:
-            logger.error(f"[MONITOR] レポート生成失敗: {slug}, 終了コード: {retcode}")
-            set_status(slug, "error")
-
-    except Exception as e:
-        logger.error(f"[MONITOR] プロセス監視中に予期しないエラー: {slug}: {type(e).__name__} - {str(e)}")
-        import traceback
-
-        logger.error(f"[MONITOR] スタックトレース:\n{traceback.format_exc()}")
+    else:
         set_status(slug, "error")
 
 
