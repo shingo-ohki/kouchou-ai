@@ -189,11 +189,19 @@ jobs:
           echo ">>> APIコンテナのレプリカ状態:"
           az containerapp replica list --name api --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --query "[].{name:name,runningState:properties.runningState,createdTime:properties.createdTime}" -o table || echo "レプリカ情報取得失敗"
-          
-          # APIコンテナのログを取得（最新50行）
-          echo ">>> APIコンテナの最新ログ:"
+
+          # APIコンテナのログを取得（詳細版）
+          echo ">>> APIコンテナの詳細ログ（全履歴）:"
           az containerapp logs show --name api --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --tail 50 || echo "ログ取得失敗"
+            --tail 100 --output table || echo "ログ取得失敗"
+
+          echo ">>> APIコンテナの環境変数確認:"
+          az containerapp show --name api --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --query "properties.template.containers[0].env" -o table || echo "環境変数取得失敗"
+
+          echo ">>> APIコンテナのプローブ設定確認:"
+          az containerapp show --name api --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --query "properties.template.containers[0].probes" -o json || echo "プローブ設定取得失敗"
           
           # ヘルスチェック確認
           echo ">>> APIヘルスチェック確認..."
