@@ -135,7 +135,17 @@ jobs:
 
           # ヘルスプローブとポリシーの適用
           echo "=== ヘルスプローブとポリシーの適用 ==="
-          make azure-apply-policies || echo "ポリシー適用失敗（継続）"
+
+          # YAMLテンプレートを処理してプローブ設定を生成
+          mkdir -p .azure/generated/health
+          cat .azure/templates/health/api-health-probe.yaml | \
+            sed "s/{{AZURE_ACR_NAME}}/${{ env.AZURE_ACR_NAME }}/g" | \
+            sed "s/{{AZURE_RESOURCE_GROUP}}/${{ env.AZURE_RESOURCE_GROUP }}/g" > .azure/generated/health/api-health-probe.yaml
+
+          # APIコンテナにプローブ設定を適用
+          echo ">>> APIコンテナにプローブ設定を適用..."
+          az containerapp update --name api --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --yaml .azure/generated/health/api-health-probe.yaml || echo "プローブ設定適用失敗（継続）"
 
       - name: APIコンテナの環境変数設定とイメージ更新
         run: |
@@ -178,8 +188,8 @@ jobs:
           echo "=== デプロイ後の状態確認 ==="
           
           # 少し待ってからステータス確認
-          echo ">>> 30秒待機してからステータス確認..."
-          sleep 30
+          echo ">>> 60秒待機してからステータス確認..."
+          sleep 60
           
           # コンテナアプリの状態確認
           echo ">>> APIコンテナの状態:"
@@ -191,9 +201,9 @@ jobs:
             --query "[].{name:name,runningState:properties.runningState,createdTime:properties.createdTime}" -o table || echo "レプリカ情報取得失敗"
 
           # APIコンテナのログを取得（詳細版）
-          echo ">>> APIコンテナの詳細ログ（全履歴）:"
+          echo ">>> APIコンテナの詳細ログ（最新200行）:"
           az containerapp logs show --name api --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --tail 100 --output table || echo "ログ取得失敗"
+            --tail 200 --output table || echo "ログ取得失敗"
 
           echo ">>> APIコンテナの環境変数確認:"
           az containerapp show --name api --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
@@ -203,13 +213,17 @@ jobs:
           az containerapp show --name api --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --query "properties.template.containers[0].probes" -o json || echo "プローブ設定取得失敗"
           
-          # ヘルスチェック確認
+          echo ">>> 適用されたプローブ設定ファイルの内容確認:"
+          cat .azure/generated/health/api-health-probe.yaml || echo "プローブ設定ファイル確認失敗"
+
+          # ヘルスチェック確認（より詳細）
           echo ">>> APIヘルスチェック確認..."
           API_DOMAIN=$(az containerapp show --name api --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)
           if [ ! -z "$API_DOMAIN" ]; then
             echo "APIドメイン: https://$API_DOMAIN"
-            curl -f "https://$API_DOMAIN/" --max-time 30 || echo "ヘルスチェック失敗"
-            curl -f "https://$API_DOMAIN/debug" --max-time 30 || echo "デバッグエンドポイント失敗"
+
+            echo ">>> ルートエンドポイント確認:"
+            curl -v "https://$API_DOMAIN/" --max-time 30 || echo "ルートエンドポイント失敗"
           else
             echo "APIドメインが取得できませんでした"
           fi
