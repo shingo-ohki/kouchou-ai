@@ -82,20 +82,51 @@ class ReportSyncService:
     def sync_report_files_to_storage(self, slug: str) -> None:
         """レポートの中間ファイルと結果ファイルをストレージにアップロードし、保持すべきファイル以外を削除する"""
 
+        logger.info(f"[SYNC] レポートファイル同期開始: {slug}")
+
         report_dir = settings.REPORT_DIR / slug
         if not report_dir.exists():
-            logger.warning(f"レポートディレクトリが存在しません: {report_dir}")
+            logger.warning(f"[SYNC] レポートディレクトリが存在しません: {report_dir}")
             return
+
+        logger.info(f"[SYNC] レポートディレクトリ確認: {report_dir}")
+
+        # ディレクトリ内のファイル一覧を表示
+        try:
+            files_in_dir = list(report_dir.glob("*"))
+            logger.info(f"[SYNC] レポートディレクトリ内ファイル数: {len(files_in_dir)}")
+            for file_path in files_in_dir:
+                file_size = file_path.stat().st_size if file_path.is_file() else "N/A"
+                logger.info(f"[SYNC] ファイル: {file_path.name}, サイズ: {file_size} bytes")
+        except Exception as e:
+            logger.error(f"[SYNC] ディレクトリ内容確認エラー: {e}")
 
         local_dir = settings.REPORT_DIR / slug
         remote_dir_prefix = f"{self.REMOTE_REPORT_DIR_PREFIX}/{slug}"
 
+        logger.info(f"[SYNC] アップロード設定 - ローカル: {local_dir}, リモート: {remote_dir_prefix}")
+
         # ファイルをストレージにアップロード
-        upload_success = self.storage_service.upload_directory(str(local_dir), remote_dir_prefix)
+        try:
+            logger.info("[SYNC] ストレージアップロード開始...")
+            upload_success = self.storage_service.upload_directory(str(local_dir), remote_dir_prefix)
+            logger.info(f"[SYNC] ストレージアップロード結果: {upload_success}")
+        except Exception as e:
+            logger.error(f"[SYNC] ストレージアップロード例外: {type(e).__name__} - {str(e)}")
+            import traceback
+
+            logger.error(f"[SYNC] スタックトレース:\n{traceback.format_exc()}")
+            upload_success = False
 
         # アップロードが成功した場合、保持すべきファイル以外を削除
         if upload_success:
-            self._cleanup_report_files(local_dir)
+            logger.info("[SYNC] ファイルクリーンアップ開始...")
+            cleanup_success = self._cleanup_report_files(local_dir)
+            logger.info(f"[SYNC] ファイルクリーンアップ結果: {cleanup_success}")
+        else:
+            logger.error("[SYNC] アップロードに失敗したためクリーンアップをスキップします")
+
+        logger.info(f"[SYNC] レポートファイル同期完了: {slug}")
 
     def sync_input_file_to_storage(self, slug: str) -> None:
         """入力ファイルをストレージにアップロードし、アップロード後にローカルファイルを削除する"""
