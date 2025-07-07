@@ -123,7 +123,8 @@ jobs:
             --build-arg NEXT_PUBLIC_API_BASEPATH="https://${API_DOMAIN}" \
             --build-arg NEXT_PUBLIC_PUBLIC_API_KEY="${{ secrets.PUBLIC_API_KEY }}" \
             --build-arg API_BASEPATH="https://${API_DOMAIN}" \
-            -t ${{ env.AZURE_ACR_NAME }}.azurecr.io/client-static-build:latest ./client-static-build
+            -f ./client-static-build/Dockerfile \
+            -t ${{ env.AZURE_ACR_NAME }}.azurecr.io/client-static-build:latest .
 
           # イメージをプッシュ
           echo "=== 全イメージをプッシュ ==="
