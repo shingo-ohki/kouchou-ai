@@ -144,8 +144,24 @@ jobs:
 
           # APIコンテナにプローブ設定を適用
           echo ">>> APIコンテナにプローブ設定を適用..."
+
+          # プローブ設定を直接CLIで適用（YAMLファイルではなく）
           az containerapp update --name api --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --yaml .azure/generated/health/api-health-probe.yaml || echo "プローブ設定適用失敗（継続）"
+            --container-name api \
+            --startup-probe-type http \
+            --startup-probe-path "/" \
+            --startup-probe-port 8000 \
+            --startup-probe-initial-delay-seconds 120 \
+            --startup-probe-period-seconds 15 \
+            --startup-probe-timeout-seconds 15 \
+            --startup-probe-failure-threshold 20 \
+            --liveness-probe-type http \
+            --liveness-probe-path "/" \
+            --liveness-probe-port 8000 \
+            --liveness-probe-initial-delay-seconds 60 \
+            --liveness-probe-period-seconds 60 \
+            --liveness-probe-timeout-seconds 10 \
+            --liveness-probe-failure-threshold 5 || echo "プローブ設定適用失敗（継続）"
 
       - name: APIコンテナの環境変数設定とイメージ更新
         run: |
