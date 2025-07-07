@@ -70,34 +70,92 @@ jobs:
           REVALIDATE_SECRET=${{ secrets.REVALIDATE_SECRET }}
           EOF
 
-      - name: Azure環境の更新デプロイ（CI最適化版）
+      - name: Azure環境の更新デプロイ（最適化版）
         run: |
-          make azure-update-deployment-ci
-
-      - name: コンテナ環境変数の設定
-        run: |
-          # APIドメイン情報を取得
+          # 既存のコンテナからドメイン情報を事前取得
+          echo "=== 既存環境からドメイン情報を取得 ==="
           API_DOMAIN=$(az containerapp show --name api --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)
           CLIENT_DOMAIN=$(az containerapp show --name client --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)
           CLIENT_ADMIN_DOMAIN=$(az containerapp show --name client-admin --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)
           CLIENT_STATIC_BUILD_DOMAIN=$(az containerapp show --name client-static-build --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)
 
+          echo "取得したドメイン情報:"
           echo "API Domain: $API_DOMAIN"
           echo "Client Domain: $CLIENT_DOMAIN"
           echo "Admin Domain: $CLIENT_ADMIN_DOMAIN"
           echo "Static Build Domain: $CLIENT_STATIC_BUILD_DOMAIN"
 
-          # すべてのコンテナをスケールダウン
-          echo ">>> コンテナをスケールダウン中..."
-          az containerapp update --name api --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --min-replicas 0
-          az containerapp update --name client --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --min-replicas 0
-          az containerapp update --name client-admin --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --min-replicas 0
-          az containerapp update --name client-static-build --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --min-replicas 0
+          # レポートのバックアップを取得
+          echo "=== レポートのバックアップを取得 ==="
+          cd $(pwd) && python3 scripts/fetch_reports.py --api-url https://$API_DOMAIN || echo "レポートバックアップ失敗（継続）"
 
-          echo ">>> 環境変数を設定中（コンテナは停止状態）..."
+          # 正しい環境変数で全イメージをビルド
+          echo "=== 正しい環境変数で全イメージをビルド ==="
 
-          # APIコンテナの環境変数設定（min-replicas=0のまま）
-          echo ">>> APIコンテナの環境変数を設定中..."
+          # APIコンテナ（サーバーサイドなので環境変数はランタイムで設定）
+          echo ">>> APIコンテナをビルド中..."
+          docker build --platform linux/amd64 -t ${{ env.AZURE_ACR_NAME }}.azurecr.io/api:latest ./server
+
+          # clientコンテナ（Next.jsなのでビルド時に環境変数を埋め込み）
+          echo ">>> clientコンテナを正しい環境変数でビルド中..."
+          docker build --platform linux/amd64 \
+            --build-arg NEXT_PUBLIC_API_BASEPATH="https://${API_DOMAIN}" \
+            --build-arg NEXT_PUBLIC_PUBLIC_API_KEY="${{ secrets.PUBLIC_API_KEY }}" \
+            --build-arg NEXT_PUBLIC_SITE_URL="${{ vars.NEXT_PUBLIC_SITE_URL }}" \
+            --build-arg API_BASEPATH="https://${API_DOMAIN}" \
+            -t ${{ env.AZURE_ACR_NAME }}.azurecr.io/client:latest ./client
+
+          # client-adminコンテナ（Next.jsなのでビルド時に環境変数を埋め込み）
+          echo ">>> client-adminコンテナを正しい環境変数でビルド中..."
+          docker build --platform linux/amd64 \
+            --build-arg NEXT_PUBLIC_CLIENT_BASEPATH="https://${CLIENT_DOMAIN}" \
+            --build-arg NEXT_PUBLIC_ADMIN_API_KEY="${{ secrets.ADMIN_API_KEY }}" \
+            --build-arg NEXT_PUBLIC_API_BASEPATH="https://${API_DOMAIN}" \
+            --build-arg CLIENT_STATIC_BUILD_BASEPATH="https://${CLIENT_STATIC_BUILD_DOMAIN}" \
+            --build-arg BASIC_AUTH_USERNAME="${{ vars.BASIC_AUTH_USERNAME }}" \
+            --build-arg BASIC_AUTH_PASSWORD="${{ secrets.BASIC_AUTH_PASSWORD }}" \
+            --build-arg API_BASEPATH="https://${API_DOMAIN}" \
+            -t ${{ env.AZURE_ACR_NAME }}.azurecr.io/client-admin:latest ./client-admin
+
+          # client-static-buildコンテナ（Next.jsなのでビルド時に環境変数を埋め込み）
+          echo ">>> client-static-buildコンテナをビルド中..."
+          docker build --platform linux/amd64 \
+            --build-arg NEXT_PUBLIC_API_BASEPATH="https://${API_DOMAIN}" \
+            --build-arg NEXT_PUBLIC_PUBLIC_API_KEY="${{ secrets.PUBLIC_API_KEY }}" \
+            --build-arg API_BASEPATH="https://${API_DOMAIN}" \
+            -t ${{ env.AZURE_ACR_NAME }}.azurecr.io/client-static-build:latest ./client-static-build
+
+          # イメージをプッシュ
+          echo "=== 全イメージをプッシュ ==="
+          docker push ${{ env.AZURE_ACR_NAME }}.azurecr.io/api:latest
+          docker push ${{ env.AZURE_ACR_NAME }}.azurecr.io/client:latest
+          docker push ${{ env.AZURE_ACR_NAME }}.azurecr.io/client-admin:latest
+          docker push ${{ env.AZURE_ACR_NAME }}.azurecr.io/client-static-build:latest
+
+          # ヘルスプローブとポリシーの適用
+          echo "=== ヘルスプローブとポリシーの適用 ==="
+          make azure-apply-policies || echo "ポリシー適用失敗（継続）"
+
+      - name: APIコンテナの環境変数設定とイメージ更新
+        run: |
+          # ドメイン情報を再取得（APIコンテナのランタイム環境変数用）
+          API_DOMAIN=$(az containerapp show --name api --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)
+          CLIENT_DOMAIN=$(az containerapp show --name client --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)
+
+          # 全コンテナのイメージを新しいバージョンに更新
+          echo "=== 新しいイメージでコンテナを更新 ==="
+          az containerapp update --name api --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --image ${{ env.AZURE_ACR_NAME }}.azurecr.io/api:latest &
+          az containerapp update --name client --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --image ${{ env.AZURE_ACR_NAME }}.azurecr.io/client:latest &
+          az containerapp update --name client-admin --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --image ${{ env.AZURE_ACR_NAME }}.azurecr.io/client-admin:latest &
+          az containerapp update --name client-static-build --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --image ${{ env.AZURE_ACR_NAME }}.azurecr.io/client-static-build:latest &
+          wait
+
+          # APIコンテナのみランタイム環境変数設定（サーバーサイドなので有効）
+          echo "=== APIコンテナの環境変数を設定 ==="
           az containerapp update --name api --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --set-env-vars \
               "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" \
@@ -111,50 +169,8 @@ jobs:
               "REVALIDATE_SECRET=${{ secrets.REVALIDATE_SECRET }}" \
               "ENVIRONMENT=${{ vars.ENVIRONMENT }}"
 
-          # クライアントコンテナの環境変数設定（min-replicas=0のまま）
-          echo ">>> クライアントコンテナの環境変数を設定中..."
-          az containerapp update --name client --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --set-env-vars \
-              "NEXT_PUBLIC_PUBLIC_API_KEY=${{ secrets.PUBLIC_API_KEY }}" \
-              "NEXT_PUBLIC_API_BASEPATH=https://${API_DOMAIN}" \
-              "API_BASEPATH=https://${API_DOMAIN}" \
-              "NEXT_PUBLIC_SITE_URL=${{ vars.NEXT_PUBLIC_SITE_URL }}"
-
-          # 管理者クライアントコンテナの環境変数設定（min-replicas=0のまま）
-          echo ">>> 管理者クライアントコンテナの環境変数を設定中..."
-          az containerapp update --name client-admin --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --set-env-vars \
-              "NEXT_PUBLIC_ADMIN_API_KEY=${{ secrets.ADMIN_API_KEY }}" \
-              "NEXT_PUBLIC_CLIENT_BASEPATH=https://${CLIENT_DOMAIN}" \
-              "NEXT_PUBLIC_API_BASEPATH=https://${API_DOMAIN}" \
-              "API_BASEPATH=https://${API_DOMAIN}" \
-              "CLIENT_STATIC_BUILD_BASEPATH=https://${CLIENT_STATIC_BUILD_DOMAIN}" \
-              "BASIC_AUTH_USERNAME=${{ vars.BASIC_AUTH_USERNAME }}" \
-              "BASIC_AUTH_PASSWORD=${{ secrets.BASIC_AUTH_PASSWORD }}"
-
-          # クライアントビルドコンテナの環境変数設定（min-replicas=0のまま）
-          echo ">>> クライアントビルドコンテナの環境変数を設定中..."
-          az containerapp update --name client-static-build --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --set-env-vars \
-              "NEXT_PUBLIC_PUBLIC_API_KEY=${{ secrets.PUBLIC_API_KEY }}" \
-              "NEXT_PUBLIC_API_BASEPATH=https://${API_DOMAIN}" \
-              "API_BASEPATH=https://${API_DOMAIN}"
-
-          echo ">>> 環境変数設定完了"
-
-      - name: コンテナ起動（環境変数設定済み）
-        run: |
-          echo "=== 環境変数設定済みの状態でコンテナを起動 ==="
-
-          # 環境変数が設定された状態でコンテナを起動
-          echo ">>> 全コンテナを起動中..."
-          az containerapp update --name api --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --min-replicas 1 &
-          az containerapp update --name client --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --min-replicas 1 &
-          az containerapp update --name client-admin --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --min-replicas 1 &
-          az containerapp update --name client-static-build --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --min-replicas 1 &
-          wait
-
-          echo ">>> 全コンテナの起動完了"
+          echo "=== デプロイ完了 ==="
+          echo "注意: client/client-admin/client-static-buildは Next.js なので、環境変数はビルド時に埋め込み済み"
 
       - name: デプロイ後の状態確認
         run: |
