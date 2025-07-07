@@ -136,17 +136,12 @@ jobs:
           # ヘルスプローブとポリシーの適用
           echo "=== ヘルスプローブとポリシーの適用 ==="
 
-          # YAMLテンプレートを処理してプローブ設定を生成
-          mkdir -p .azure/generated/health
-          cat .azure/templates/health/api-health-probe.yaml | \
-            sed "s/{{AZURE_ACR_NAME}}/${{ env.AZURE_ACR_NAME }}/g" | \
-            sed "s/{{AZURE_RESOURCE_GROUP}}/${{ env.AZURE_RESOURCE_GROUP }}/g" > .azure/generated/health/api-health-probe.yaml
+          # Makefileで必要な環境変数を設定
+          export AZURE_ACR_NAME=${{ env.AZURE_ACR_NAME }}
+          export AZURE_RESOURCE_GROUP=${{ env.AZURE_RESOURCE_GROUP }}
 
-          # APIコンテナにプローブ設定を適用
-          echo ">>> APIコンテナにプローブ設定を適用..."
-
-          # プローブ設定をスキップ（現在はCLIオプションが利用できないため）
-          echo ">>> プローブ設定は後のイメージ更新時に自動適用されます"
+          # 元のMakefileを使ってプローブ設定を適用（新しいリビジョンも作成される）
+          make azure-apply-policies || echo "ポリシー適用失敗（継続）"
 
       - name: APIコンテナの環境変数設定とイメージ更新
         run: |
