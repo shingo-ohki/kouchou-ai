@@ -1,7 +1,7 @@
 .PHONY: build up down \
 lint/server-check lint/server-format \
 client-build-static client-setup client-dev client-dev-server client-admin-dev-server dummy-server \
-azure-cli azure-login azure-build azure-build-ci azure-push azure-deploy azure-info azure-config-update azure-cleanup azure-status prepare-yaml azure-save-env azure-apply-policies azure-update-deployment-ci azure-fix-client-admin-ci \
+azure-cli azure-login azure-build azure-push azure-deploy azure-info azure-config-update azure-cleanup azure-status prepare-yaml azure-apply-policies \
 azure-logs-client azure-logs-api azure-logs-admin azure-logs-client-static-build
 
 ##############################################################################
@@ -141,14 +141,6 @@ azure-build:
 		--build-arg CLIENT_STATIC_BUILD_BASEPATH="$(CLIENT_STATIC_BUILD_BASEPATH)" \
 		-t $(AZURE_ACR_NAME).azurecr.io/client-admin:latest ./client-admin
 	docker build --platform linux/amd64 --no-cache -t $(AZURE_ACR_NAME).azurecr.io/client-static-build:latest -f ./client-static-build/Dockerfile .
-
-# Azure用のイメージをビルド（CI環境用 - 環境変数なし）
-azure-build-ci:
-	$(call read-env)
-	docker build --platform linux/amd64 -t $(AZURE_ACR_NAME).azurecr.io/api:latest ./server
-	docker build --platform linux/amd64 -t $(AZURE_ACR_NAME).azurecr.io/client:latest ./client
-	docker build --platform linux/amd64 --no-cache -t $(AZURE_ACR_NAME).azurecr.io/client-admin:latest ./client-admin
-	docker build --platform linux/amd64 -t $(AZURE_ACR_NAME).azurecr.io/client-static-build:latest ./client-static-build
 
 # イメージをAzureにプッシュ（ローカルのDockerから）
 azure-push:
@@ -401,20 +393,6 @@ azure-setup-all:
 	@echo ">>> セットアップが完了しました。上記のURLでサービスにアクセスできます。"
 
 # セットアップ後に生成された環境変数を保存
-azure-save-env:
-	@if [ -f .env.azure.generated ]; then \
-	    if [ -f .env.azure ]; then \
-	        echo ">>> .env.azureファイルがすでに存在します。.env.azure.generatedの内容を追加します。"; \
-	        cat .env.azure.generated >> .env.azure; \
-	    else \
-	        echo ">>> .env.azureファイルを生成します。"; \
-	        cp .env.azure.example .env.azure; \
-	        cat .env.azure.generated >> .env.azure; \
-	    fi; \
-	    echo ">>> 自動生成された環境変数を.env.azureに保存しました"; \
-	    rm .env.azure.generated; \
-	fi
-
 ##############################################################################
 # Azure運用時コマンド
 ##############################################################################
@@ -632,58 +610,4 @@ prepare-yaml:
 	done
 
 # CI環境用のデプロイターゲット
-azure-update-deployment-ci:
-	$(call read-env)
-	@$(MAKE) azure-check-revalidate-secret
 
-	@echo ">>> レポートのバックアップを取得..."
-	$(eval API_DOMAIN=$(shell docker run --rm -v $(HOME)/.azure:/root/.azure mcr.microsoft.com/azure-cli /bin/bash -c "az containerapp show --name api --resource-group $(AZURE_RESOURCE_GROUP) --query properties.configuration.ingress.fqdn -o tsv 2>/dev/null | tail -n 1"))
-	@echo ">>> API_DOMAIN: $(API_DOMAIN)"
-	@cd $(shell pwd) && python3 scripts/fetch_reports.py --api-url https://$(API_DOMAIN)
-
-	@echo ">>> コンテナイメージのビルド（CI環境用）..."
-	@$(MAKE) azure-build-ci
-
-	@echo ">>> イメージのプッシュ..."
-	@$(MAKE) azure-acr-login-auto
-	@$(MAKE) azure-push
-
-	@echo ">>> ヘルスプローブとポリシーの適用..."
-	@$(MAKE) azure-apply-policies
-
-	@echo ">>> CI環境では環境変数設定・コンテナ再起動をスキップ（GitHub Actionsで実行）..."
-
-	@echo ">>> サービスURLの確認..."
-	@$(MAKE) azure-info
-
-	@echo ">>> CI用デプロイの更新が完了しました。環境変数はGitHub Actionsで設定してください。"
-
-# CI環境用のclient-admin修正（環境変数設定なし）
-azure-fix-client-admin-ci:
-	$(call read-env)
-	@echo ">>> API・クライアント・クライアントビルドのドメイン情報を取得しています..."
-	$(eval API_DOMAIN=$(shell docker run --rm -v $(HOME)/.azure:/root/.azure mcr.microsoft.com/azure-cli /bin/bash -c "az containerapp show --name api --resource-group $(AZURE_RESOURCE_GROUP) --query properties.configuration.ingress.fqdn -o tsv 2>/dev/null | tail -n 1"))
-	$(eval CLIENT_DOMAIN=$(shell docker run --rm -v $(HOME)/.azure:/root/.azure mcr.microsoft.com/azure-cli /bin/bash -c "az containerapp show --name client --resource-group $(AZURE_RESOURCE_GROUP) --query properties.configuration.ingress.fqdn -o tsv 2>/dev/null | tail -n 1"))
-	$(eval CLIENT_STATIC_BUILD_DOMAIN=$(shell docker run --rm -v $(HOME)/.azure:/root/.azure mcr.microsoft.com/azure-cli /bin/bash -c "az containerapp show --name client-static-build --resource-group $(AZURE_RESOURCE_GROUP) --query properties.configuration.ingress.fqdn -o tsv 2>/dev/null | tail -n 1"))
-
-	@echo ">>> API_DOMAIN=$(API_DOMAIN)"
-	@echo ">>> CLIENT_DOMAIN=$(CLIENT_DOMAIN)"
-	@echo ">>> CLIENT_STATIC_BUILD_DOMAIN=$(CLIENT_STATIC_BUILD_DOMAIN)"
-
-	@echo ">>> 環境変数を設定し、キャッシュを無効化してclient-adminを再ビルド..."
-	docker build --platform linux/amd64 --no-cache \
-	  --build-arg NEXT_PUBLIC_API_BASEPATH=https://$(API_DOMAIN) \
-	  --build-arg NEXT_PUBLIC_ADMIN_API_KEY=$(ADMIN_API_KEY) \
-	  --build-arg NEXT_PUBLIC_CLIENT_BASEPATH=https://$(CLIENT_DOMAIN) \
-	  --build-arg CLIENT_STATIC_BUILD_BASEPATH=https://$(CLIENT_STATIC_BUILD_DOMAIN) \
-	  -t $(AZURE_ACR_NAME).azurecr.io/client-admin:latest ./client-admin
-
-	@echo ">>> イメージをプッシュ..."
-	docker push $(AZURE_ACR_NAME).azurecr.io/client-admin:latest
-
-	@echo ">>> コンテナアプリを更新..."
-	docker run --rm -v $(HOME)/.azure:/root/.azure mcr.microsoft.com/azure-cli /bin/bash -c "\
-	  az containerapp update --name client-admin --resource-group $(AZURE_RESOURCE_GROUP) \
-	    --image $(AZURE_ACR_NAME).azurecr.io/client-admin:latest"
-
-	@echo ">>> CI環境では再起動をスキップ（GitHub Actionsで環境変数設定後に再起動）"
