@@ -137,7 +137,8 @@ jobs:
         run: |
           # 全コンテナのイメージを更新
           az containerapp update --name api --resource-group ${AZURE_RESOURCE_GROUP} \
-            --image ${AZURE_ACR_NAME}.azurecr.io/api:latest &
+            --image ${AZURE_ACR_NAME}.azurecr.io/api:latest \
+            --cpu 1.0 --memory 2.0Gi &
           az containerapp update --name client --resource-group ${AZURE_RESOURCE_GROUP} \
             --image ${AZURE_ACR_NAME}.azurecr.io/client:latest &
           az containerapp update --name client-admin --resource-group ${AZURE_RESOURCE_GROUP} \
