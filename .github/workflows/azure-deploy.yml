@@ -8,6 +8,17 @@ on:
 env:
   AZURE_ACR_NAME: ${{ vars.AZURE_ACR_NAME }}
   AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+  AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+  AZURE_CONTAINER_ENV: ${{ vars.AZURE_CONTAINER_ENV }}
+  AZURE_BLOB_STORAGE_ACCOUNT_NAME: ${{ vars.AZURE_BLOB_STORAGE_ACCOUNT_NAME }}
+  AZURE_BLOB_STORAGE_CONTAINER_NAME: ${{ vars.AZURE_BLOB_STORAGE_CONTAINER_NAME }}
+  ENVIRONMENT: ${{ vars.ENVIRONMENT }}
+  BASIC_AUTH_USERNAME: ${{ vars.BASIC_AUTH_USERNAME }}
+  PUBLIC_API_KEY: ${{ secrets.PUBLIC_API_KEY }}
+  ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
+  BASIC_AUTH_PASSWORD: ${{ secrets.BASIC_AUTH_PASSWORD }}
+  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+  REVALIDATE_SECRET: ${{ secrets.REVALIDATE_SECRET }}
 
 jobs:
   deploy:
@@ -41,122 +52,116 @@ jobs:
         run: |
           # .env.azureファイルの作成（Makefileで使用）
           cat > .env.azure << EOF
-          AZURE_RESOURCE_GROUP=${{ vars.AZURE_RESOURCE_GROUP }}
-          AZURE_LOCATION=${{ vars.AZURE_LOCATION }}
-          AZURE_ACR_NAME=${{ vars.AZURE_ACR_NAME }}
-          AZURE_CONTAINER_ENV=${{ vars.AZURE_CONTAINER_ENV }}
-          AZURE_BLOB_STORAGE_ACCOUNT_NAME=${{ vars.AZURE_BLOB_STORAGE_ACCOUNT_NAME }}
-          AZURE_BLOB_STORAGE_CONTAINER_NAME=${{ vars.AZURE_BLOB_STORAGE_CONTAINER_NAME }}
+          AZURE_RESOURCE_GROUP=${{ env.AZURE_RESOURCE_GROUP }}
+          AZURE_LOCATION=${{ env.AZURE_LOCATION }}
+          AZURE_ACR_NAME=${{ env.AZURE_ACR_NAME }}
+          AZURE_CONTAINER_ENV=${{ env.AZURE_CONTAINER_ENV }}
+          AZURE_BLOB_STORAGE_ACCOUNT_NAME=${{ env.AZURE_BLOB_STORAGE_ACCOUNT_NAME }}
+          AZURE_BLOB_STORAGE_CONTAINER_NAME=${{ env.AZURE_BLOB_STORAGE_CONTAINER_NAME }}
           EOF
 
-      - name: ドメイン情報取得
-        id: domains
+      - name: ドメイン情報の準備
         run: |
-          # 既存のコンテナからドメイン情報を取得
-          API_DOMAIN=$(az containerapp show --name api --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)
-          CLIENT_DOMAIN=$(az containerapp show --name client --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)
-          CLIENT_ADMIN_DOMAIN=$(az containerapp show --name client-admin --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)
-          CLIENT_STATIC_BUILD_DOMAIN=$(az containerapp show --name client-static-build --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)
-
-          echo "api-domain=${API_DOMAIN}" >> $GITHUB_OUTPUT
-          echo "client-domain=${CLIENT_DOMAIN}" >> $GITHUB_OUTPUT
-          echo "client-admin-domain=${CLIENT_ADMIN_DOMAIN}" >> $GITHUB_OUTPUT
-          echo "client-static-build-domain=${CLIENT_STATIC_BUILD_DOMAIN}" >> $GITHUB_OUTPUT
+          # ドメイン情報を直接環境変数に設定
+          echo "API_DOMAIN=$(az containerapp show --name api \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --query properties.configuration.ingress.fqdn -o tsv)" >> $GITHUB_ENV
+          echo "CLIENT_DOMAIN=$(az containerapp show --name client \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --query properties.configuration.ingress.fqdn -o tsv)" >> $GITHUB_ENV
+          echo "CLIENT_ADMIN_DOMAIN=$(az containerapp show --name client-admin \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --query properties.configuration.ingress.fqdn -o tsv)" >> $GITHUB_ENV
+          echo "CLIENT_STATIC_BUILD_DOMAIN=$(az containerapp show --name client-static-build \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --query properties.configuration.ingress.fqdn -o tsv)" >> $GITHUB_ENV
 
       - name: Azure環境のデプロイ
         run: |
-          # step outputsからドメイン情報を取得
-          API_DOMAIN="${{ steps.domains.outputs.api-domain }}"
-          CLIENT_DOMAIN="${{ steps.domains.outputs.client-domain }}"
-          CLIENT_ADMIN_DOMAIN="${{ steps.domains.outputs.client-admin-domain }}"
-          CLIENT_STATIC_BUILD_DOMAIN="${{ steps.domains.outputs.client-static-build-domain }}"
-
           # レポートのバックアップを取得
-          python3 scripts/fetch_reports.py --api-url https://$API_DOMAIN || echo "レポートバックアップをスキップ"
+          if [ -n "$API_DOMAIN" ]; then
+            echo "レポートのバックアップを取得中..."
+            python3 scripts/fetch_reports.py --api-url https://$API_DOMAIN
+          else
+            echo "❌ レポートのバックアップが取得できませんでした"
+            exit 1
+          fi
 
           # 全イメージを並列ビルド
           docker build --platform linux/amd64 \
-            -t ${{ env.AZURE_ACR_NAME }}.azurecr.io/api:latest \
+            -t ${AZURE_ACR_NAME}.azurecr.io/api:latest \
             ./server &
 
           docker build --platform linux/amd64 \
             --build-arg NEXT_PUBLIC_API_BASEPATH="https://${API_DOMAIN}" \
-            --build-arg NEXT_PUBLIC_PUBLIC_API_KEY="${{ secrets.PUBLIC_API_KEY }}" \
+            --build-arg NEXT_PUBLIC_PUBLIC_API_KEY="${PUBLIC_API_KEY}" \
             --build-arg API_BASEPATH="https://${API_DOMAIN}" \
-            -t ${{ env.AZURE_ACR_NAME }}.azurecr.io/client:latest \
+            -t ${AZURE_ACR_NAME}.azurecr.io/client:latest \
             ./client &
 
           docker build --platform linux/amd64 \
             --build-arg NEXT_PUBLIC_CLIENT_BASEPATH="https://${CLIENT_DOMAIN}" \
-            --build-arg NEXT_PUBLIC_ADMIN_API_KEY="${{ secrets.ADMIN_API_KEY }}" \
+            --build-arg NEXT_PUBLIC_ADMIN_API_KEY="${ADMIN_API_KEY}" \
             --build-arg NEXT_PUBLIC_API_BASEPATH="https://${API_DOMAIN}" \
             --build-arg CLIENT_STATIC_BUILD_BASEPATH="https://${CLIENT_STATIC_BUILD_DOMAIN}" \
-            --build-arg BASIC_AUTH_USERNAME="${{ vars.BASIC_AUTH_USERNAME }}" \
-            --build-arg BASIC_AUTH_PASSWORD="${{ secrets.BASIC_AUTH_PASSWORD }}" \
+            --build-arg BASIC_AUTH_USERNAME="${BASIC_AUTH_USERNAME}" \
+            --build-arg BASIC_AUTH_PASSWORD="${BASIC_AUTH_PASSWORD}" \
             --build-arg API_BASEPATH="https://${API_DOMAIN}" \
-            -t ${{ env.AZURE_ACR_NAME }}.azurecr.io/client-admin:latest \
+            -t ${AZURE_ACR_NAME}.azurecr.io/client-admin:latest \
             ./client-admin &
 
           docker build --platform linux/amd64 \
             --build-arg NEXT_PUBLIC_API_BASEPATH="https://${API_DOMAIN}" \
-            --build-arg NEXT_PUBLIC_PUBLIC_API_KEY="${{ secrets.PUBLIC_API_KEY }}" \
+            --build-arg NEXT_PUBLIC_PUBLIC_API_KEY="${PUBLIC_API_KEY}" \
             --build-arg API_BASEPATH="https://${API_DOMAIN}" \
             -f ./client-static-build/Dockerfile \
-            -t ${{ env.AZURE_ACR_NAME }}.azurecr.io/client-static-build:latest \
+            -t ${AZURE_ACR_NAME}.azurecr.io/client-static-build:latest \
             . &
 
           # 全ビルドの完了を待機
           wait
 
           # イメージを並列プッシュ
-          docker push ${{ env.AZURE_ACR_NAME }}.azurecr.io/api:latest &
-          docker push ${{ env.AZURE_ACR_NAME }}.azurecr.io/client:latest &
-          docker push ${{ env.AZURE_ACR_NAME }}.azurecr.io/client-admin:latest &
-          docker push ${{ env.AZURE_ACR_NAME }}.azurecr.io/client-static-build:latest &
+          docker push ${AZURE_ACR_NAME}.azurecr.io/api:latest &
+          docker push ${AZURE_ACR_NAME}.azurecr.io/client:latest &
+          docker push ${AZURE_ACR_NAME}.azurecr.io/client-admin:latest &
+          docker push ${AZURE_ACR_NAME}.azurecr.io/client-static-build:latest &
 
           # 全プッシュの完了を待機
           wait
 
           # ヘルスプローブとポリシーの適用
-          export AZURE_ACR_NAME=${{ env.AZURE_ACR_NAME }}
-          export AZURE_RESOURCE_GROUP=${{ env.AZURE_RESOURCE_GROUP }}
           make azure-apply-policies || echo "ポリシー適用をスキップ"
 
       - name: コンテナ更新
         run: |
-          # step outputsからドメイン情報を取得
-          CLIENT_DOMAIN="${{ steps.domains.outputs.client-domain }}"
-
           # 全コンテナのイメージを更新
-          az containerapp update --name api --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --image ${{ env.AZURE_ACR_NAME }}.azurecr.io/api:latest &
-          az containerapp update --name client --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --image ${{ env.AZURE_ACR_NAME }}.azurecr.io/client:latest &
-          az containerapp update --name client-admin --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --image ${{ env.AZURE_ACR_NAME }}.azurecr.io/client-admin:latest &
-          az containerapp update --name client-static-build --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --image ${{ env.AZURE_ACR_NAME }}.azurecr.io/client-static-build:latest &
+          az containerapp update --name api --resource-group ${AZURE_RESOURCE_GROUP} \
+            --image ${AZURE_ACR_NAME}.azurecr.io/api:latest &
+          az containerapp update --name client --resource-group ${AZURE_RESOURCE_GROUP} \
+            --image ${AZURE_ACR_NAME}.azurecr.io/client:latest &
+          az containerapp update --name client-admin --resource-group ${AZURE_RESOURCE_GROUP} \
+            --image ${AZURE_ACR_NAME}.azurecr.io/client-admin:latest &
+          az containerapp update --name client-static-build --resource-group ${AZURE_RESOURCE_GROUP} \
+            --image ${AZURE_ACR_NAME}.azurecr.io/client-static-build:latest &
           wait
 
           # APIコンテナの環境変数設定
-          az containerapp update --name api --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+          az containerapp update --name api --resource-group ${AZURE_RESOURCE_GROUP} \
             --set-env-vars \
-              "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" \
-              "PUBLIC_API_KEY=${{ secrets.PUBLIC_API_KEY }}" \
-              "ADMIN_API_KEY=${{ secrets.ADMIN_API_KEY }}" \
+              "OPENAI_API_KEY=${OPENAI_API_KEY}" \
+              "PUBLIC_API_KEY=${PUBLIC_API_KEY}" \
+              "ADMIN_API_KEY=${ADMIN_API_KEY}" \
               "LOG_LEVEL=info" \
-              "AZURE_BLOB_STORAGE_ACCOUNT_NAME=${{ vars.AZURE_BLOB_STORAGE_ACCOUNT_NAME }}" \
-              "AZURE_BLOB_STORAGE_CONTAINER_NAME=${{ vars.AZURE_BLOB_STORAGE_CONTAINER_NAME }}" \
+              "AZURE_BLOB_STORAGE_ACCOUNT_NAME=${AZURE_BLOB_STORAGE_ACCOUNT_NAME}" \
+              "AZURE_BLOB_STORAGE_CONTAINER_NAME=${AZURE_BLOB_STORAGE_CONTAINER_NAME}" \
               "STORAGE_TYPE=azure_blob" \
               "REVALIDATE_URL=https://${CLIENT_DOMAIN}/api/revalidate" \
-              "REVALIDATE_SECRET=${{ secrets.REVALIDATE_SECRET }}" \
-              "ENVIRONMENT=${{ vars.ENVIRONMENT }}"
+              "REVALIDATE_SECRET=${REVALIDATE_SECRET}" \
+              "ENVIRONMENT=${ENVIRONMENT}"
 
       - name: デプロイ確認
         run: |
-          # step outputsからドメイン情報を取得
-          API_DOMAIN="${{ steps.domains.outputs.api-domain }}"
-          
           if [ -z "$API_DOMAIN" ]; then
             echo "❌ APIドメインが取得できませんでした"
             exit 1
