@@ -49,13 +49,27 @@ jobs:
           AZURE_BLOB_STORAGE_CONTAINER_NAME=${{ vars.AZURE_BLOB_STORAGE_CONTAINER_NAME }}
           EOF
 
-      - name: Azure環境のデプロイ
+      - name: ドメイン情報取得
+        id: domains
         run: |
           # 既存のコンテナからドメイン情報を取得
           API_DOMAIN=$(az containerapp show --name api --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)
           CLIENT_DOMAIN=$(az containerapp show --name client --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)
           CLIENT_ADMIN_DOMAIN=$(az containerapp show --name client-admin --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)
           CLIENT_STATIC_BUILD_DOMAIN=$(az containerapp show --name client-static-build --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)
+
+          echo "api-domain=${API_DOMAIN}" >> $GITHUB_OUTPUT
+          echo "client-domain=${CLIENT_DOMAIN}" >> $GITHUB_OUTPUT
+          echo "client-admin-domain=${CLIENT_ADMIN_DOMAIN}" >> $GITHUB_OUTPUT
+          echo "client-static-build-domain=${CLIENT_STATIC_BUILD_DOMAIN}" >> $GITHUB_OUTPUT
+
+      - name: Azure環境のデプロイ
+        run: |
+          # step outputsからドメイン情報を取得
+          API_DOMAIN="${{ steps.domains.outputs.api-domain }}"
+          CLIENT_DOMAIN="${{ steps.domains.outputs.client-domain }}"
+          CLIENT_ADMIN_DOMAIN="${{ steps.domains.outputs.client-admin-domain }}"
+          CLIENT_STATIC_BUILD_DOMAIN="${{ steps.domains.outputs.client-static-build-domain }}"
 
           # レポートのバックアップを取得
           python3 scripts/fetch_reports.py --api-url https://$API_DOMAIN || echo "レポートバックアップをスキップ"
@@ -99,9 +113,8 @@ jobs:
 
       - name: コンテナ更新
         run: |
-          # ドメイン情報を再取得
-          API_DOMAIN=$(az containerapp show --name api --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)
-          CLIENT_DOMAIN=$(az containerapp show --name client --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)
+          # step outputsからドメイン情報を取得
+          CLIENT_DOMAIN="${{ steps.domains.outputs.client-domain }}"
 
           # 全コンテナのイメージを更新
           az containerapp update --name api --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
@@ -130,7 +143,8 @@ jobs:
 
       - name: デプロイ確認
         run: |
-          API_DOMAIN=$(az containerapp show --name api --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv)
+          # step outputsからドメイン情報を取得
+          API_DOMAIN="${{ steps.domains.outputs.api-domain }}"
           
           if [ -z "$API_DOMAIN" ]; then
             echo "❌ APIドメインが取得できませんでした"
