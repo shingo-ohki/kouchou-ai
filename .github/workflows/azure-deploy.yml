@@ -74,14 +74,17 @@ jobs:
           # レポートのバックアップを取得
           python3 scripts/fetch_reports.py --api-url https://$API_DOMAIN || echo "レポートバックアップをスキップ"
 
-          # 全イメージをビルド
-          docker build --platform linux/amd64 -t ${{ env.AZURE_ACR_NAME }}.azurecr.io/api:latest ./server
+          # 全イメージを並列ビルド
+          docker build --platform linux/amd64 \
+            -t ${{ env.AZURE_ACR_NAME }}.azurecr.io/api:latest \
+            ./server &
 
           docker build --platform linux/amd64 \
             --build-arg NEXT_PUBLIC_API_BASEPATH="https://${API_DOMAIN}" \
             --build-arg NEXT_PUBLIC_PUBLIC_API_KEY="${{ secrets.PUBLIC_API_KEY }}" \
             --build-arg API_BASEPATH="https://${API_DOMAIN}" \
-            -t ${{ env.AZURE_ACR_NAME }}.azurecr.io/client:latest ./client
+            -t ${{ env.AZURE_ACR_NAME }}.azurecr.io/client:latest \
+            ./client &
 
           docker build --platform linux/amd64 \
             --build-arg NEXT_PUBLIC_CLIENT_BASEPATH="https://${CLIENT_DOMAIN}" \
@@ -91,20 +94,28 @@ jobs:
             --build-arg BASIC_AUTH_USERNAME="${{ vars.BASIC_AUTH_USERNAME }}" \
             --build-arg BASIC_AUTH_PASSWORD="${{ secrets.BASIC_AUTH_PASSWORD }}" \
             --build-arg API_BASEPATH="https://${API_DOMAIN}" \
-            -t ${{ env.AZURE_ACR_NAME }}.azurecr.io/client-admin:latest ./client-admin
+            -t ${{ env.AZURE_ACR_NAME }}.azurecr.io/client-admin:latest \
+            ./client-admin &
 
           docker build --platform linux/amd64 \
             --build-arg NEXT_PUBLIC_API_BASEPATH="https://${API_DOMAIN}" \
             --build-arg NEXT_PUBLIC_PUBLIC_API_KEY="${{ secrets.PUBLIC_API_KEY }}" \
             --build-arg API_BASEPATH="https://${API_DOMAIN}" \
             -f ./client-static-build/Dockerfile \
-            -t ${{ env.AZURE_ACR_NAME }}.azurecr.io/client-static-build:latest .
+            -t ${{ env.AZURE_ACR_NAME }}.azurecr.io/client-static-build:latest \
+            . &
 
-          # イメージをプッシュ
-          docker push ${{ env.AZURE_ACR_NAME }}.azurecr.io/api:latest
-          docker push ${{ env.AZURE_ACR_NAME }}.azurecr.io/client:latest
-          docker push ${{ env.AZURE_ACR_NAME }}.azurecr.io/client-admin:latest
-          docker push ${{ env.AZURE_ACR_NAME }}.azurecr.io/client-static-build:latest
+          # 全ビルドの完了を待機
+          wait
+
+          # イメージを並列プッシュ
+          docker push ${{ env.AZURE_ACR_NAME }}.azurecr.io/api:latest &
+          docker push ${{ env.AZURE_ACR_NAME }}.azurecr.io/client:latest &
+          docker push ${{ env.AZURE_ACR_NAME }}.azurecr.io/client-admin:latest &
+          docker push ${{ env.AZURE_ACR_NAME }}.azurecr.io/client-static-build:latest &
+
+          # 全プッシュの完了を待機
+          wait
 
           # ヘルスプローブとポリシーの適用
           export AZURE_ACR_NAME=${{ env.AZURE_ACR_NAME }}
