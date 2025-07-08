@@ -608,6 +608,3 @@ prepare-yaml:
 	    sed "s/{{AZURE_CONTAINER_ENV}}/$(AZURE_CONTAINER_ENV)/g" | \
 	    sed "s/{{AZURE_LOCATION}}/$(AZURE_LOCATION)/g" > .azure/generated/health/$$outfile; \
 	done
-
-# CI環境用のデプロイターゲット
-
