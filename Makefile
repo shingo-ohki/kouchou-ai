@@ -170,14 +170,9 @@ azure-deploy:
 	        --query customerId -o tsv) && \
 	    echo '>>> Container Apps環境の作成...' && \
 	    az containerapp env create \
-	        --name $(AZURE_CONTAINER_ENV) \
-	        --resource-group $(AZURE_RESOURCE_GROUP) \
-	        --location $(AZURE_LOCATION) \
 	        --logs-workspace-id \$$WORKSPACE_ID && \
 	    echo '>>> ACRへのアクセス権の設定...' && \
 	    az acr update \
-	        --name $(AZURE_ACR_NAME) \
-	        --resource-group $(AZURE_RESOURCE_GROUP) \
 	        --admin-enabled true && \
 	    ACR_PASSWORD=\$$(az acr credential show \
 	        --name $(AZURE_ACR_NAME) \
@@ -185,51 +180,15 @@ azure-deploy:
 	        --query passwords[0].value -o tsv) && \
 	    echo '>>> APIコンテナのデプロイ...' && \
 	    az containerapp create \
-	        --name api \
-	        --resource-group $(AZURE_RESOURCE_GROUP) \
-	        --environment $(AZURE_CONTAINER_ENV) \
-	        --image $(AZURE_ACR_NAME).azurecr.io/api:latest \
-	        --registry-server $(AZURE_ACR_NAME).azurecr.io \
-	        --registry-username $(AZURE_ACR_NAME) \
-	        --registry-password \$$ACR_PASSWORD \
-	        --target-port 8000 \
-	        --ingress external \
 	        --min-replicas 1 && \
 	    echo '>>> クライアントコンテナのデプロイ...' && \
 	    az containerapp create \
-	        --name client \
-	        --resource-group $(AZURE_RESOURCE_GROUP) \
-	        --environment $(AZURE_CONTAINER_ENV) \
-	        --image $(AZURE_ACR_NAME).azurecr.io/client:latest \
-	        --registry-server $(AZURE_ACR_NAME).azurecr.io \
-	        --registry-username $(AZURE_ACR_NAME) \
-	        --registry-password \$$ACR_PASSWORD \
-	        --target-port 3000 \
-	        --ingress external \
 	        --min-replicas 1 && \
 	    echo '>>> 管理者クライアントコンテナのデプロイ...' && \
 	    az containerapp create \
-	        --name client-admin \
-	        --resource-group $(AZURE_RESOURCE_GROUP) \
-	        --environment $(AZURE_CONTAINER_ENV) \
-	        --image $(AZURE_ACR_NAME).azurecr.io/client-admin:latest \
-	        --registry-server $(AZURE_ACR_NAME).azurecr.io \
-	        --registry-username $(AZURE_ACR_NAME) \
-	        --registry-password \$$ACR_PASSWORD \
-	        --target-port 4000 \
-	        --ingress external \
 	        --min-replicas 1 && \
 	    echo '>>> クライアントビルドコンテナのデプロイ...' && \
 	    az containerapp create \
-	        --name client-static-build \
-	        --resource-group $(AZURE_RESOURCE_GROUP) \
-	        --environment $(AZURE_CONTAINER_ENV) \
-	        --image $(AZURE_ACR_NAME).azurecr.io/client-static-build:latest \
-	        --registry-server $(AZURE_ACR_NAME).azurecr.io \
-	        --registry-username $(AZURE_ACR_NAME) \
-	        --registry-password \$$ACR_PASSWORD \
-	        --target-port 3200 \
-	        --ingress internal \
 	        --min-replicas 1"
 
 # マネージドIDのContainer Appへの割り当て
