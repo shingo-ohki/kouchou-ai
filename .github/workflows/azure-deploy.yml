@@ -192,8 +192,7 @@ jobs:
             --set-env-vars \
               "NEXT_PUBLIC_API_BASEPATH=https://${API_DOMAIN}" \
               "API_BASEPATH=https://${API_DOMAIN}" \
-              "NEXT_PUBLIC_PUBLIC_API_KEY=secretref:public-api-key" \
-              "NODE_ENV=production"
+              "NEXT_PUBLIC_PUBLIC_API_KEY=secretref:public-api-key"
 
       - name: デプロイ確認
         run: |
