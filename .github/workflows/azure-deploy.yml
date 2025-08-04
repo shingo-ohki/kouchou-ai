@@ -150,6 +150,12 @@ jobs:
               azure-blob-storage-account-name=${AZURE_BLOB_STORAGE_ACCOUNT_NAME} \
               azure-blob-storage-container-name=${AZURE_BLOB_STORAGE_CONTAINER_NAME}
 
+          # Clientコンテナにもpublic-api-keyシークレットを登録
+          az containerapp secret set \
+            --name client --resource-group ${AZURE_RESOURCE_GROUP} \
+            --secrets \
+              public-api-key=${PUBLIC_API_KEY}
+
       - name: コンテナ更新
         run: |
           set -euo pipefail
@@ -180,6 +186,14 @@ jobs:
               "REVALIDATE_URL=https://${CLIENT_DOMAIN}/api/revalidate" \
               "REVALIDATE_SECRET=secretref:revalidate-secret" \
               "ENVIRONMENT=${ENVIRONMENT}"
+
+          # Clientコンテナの環境変数設定
+          az containerapp update --name client --resource-group ${AZURE_RESOURCE_GROUP} \
+            --set-env-vars \
+              "NEXT_PUBLIC_API_BASEPATH=https://${API_DOMAIN}" \
+              "API_BASEPATH=https://${API_DOMAIN}" \
+              "NEXT_PUBLIC_PUBLIC_API_KEY=secretref:public-api-key" \
+              "NODE_ENV=production"
 
       - name: デプロイ確認
         run: |
