@@ -244,7 +244,7 @@ export function ScatterChart({
             },
             text: matching.map((arg) => {
               const argumentText = arg.argument.replace(/(.{30})/g, "$1<br />");
-              const urlText = config?.enable_source_link && arg.url ? `<br><b>🔗 クリックしてソースを見る</b>` : "";
+              const urlText = config?.enable_source_link && arg.url ? "<br><b>🔗 クリックしてソースを見る</b>" : "";
               return `<b>${cluster.label}</b><br>${argumentText}${urlText}`;
             }),
             type: "scattergl",
