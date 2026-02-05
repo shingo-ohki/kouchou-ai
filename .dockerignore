@@ -40,6 +40,7 @@ test/
 .env.example
 .env.local
 .env.*.local
+.env.azure
 lefthook.yml
 biome.json
 tsconfig*.json
